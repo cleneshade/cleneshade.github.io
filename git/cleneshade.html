@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Repo Explorer - cleneshade</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #e5e7eb; }
+        .file-link.active { background-color: #000; color: #fff; }
+        .folder-header { cursor: pointer; user-select: none; transition: background 0.2s; }
+        .folder-header:hover { background-color: #f3f4f6; }
+        .collapsed + .file-group { display: none; }
+        .chevron { display: inline-block; width: 10px; transition: transform 0.2s; font-size: 0.6rem; }
+        .collapsed .chevron { transform: rotate(-90deg); }
+    </style>
+</head>
+<body class="bg-white h-screen flex flex-col font-sans text-gray-900 overflow-hidden">
+
+    <header class="border-b px-6 py-3 flex justify-between items-center bg-white z-10">
+        <h1 class="text-xs font-bold tracking-widest uppercase">cleneshade / cleneshade</h1>
+        <div id="status-msg" class="text-[10px] uppercase tracking-wider text-gray-400">Ready</div>
+    </header>
+
+    <main class="flex flex-1 overflow-hidden">
+        
+        <aside class="w-64 border-r flex flex-col bg-white">
+            <div id="tree-container" class="overflow-y-auto flex-1 p-2">
+                <p class="text-xs p-4 text-gray-400">Loading tree...</p>
+            </div>
+        </aside>
+
+        <section class="flex-1 flex flex-col bg-gray-50">
+            <div id="file-meta" class="px-6 py-2 border-b text-[10px] font-mono text-gray-400 bg-white hidden">
+                PATH: <span id="current-path" class="text-gray-800"></span>
+            </div>
+            <div class="flex-1 overflow-auto">
+                <pre id="preview-content" class="p-8 text-sm font-mono leading-relaxed text-gray-700 whitespace-pre"></pre>
+                <div id="empty-state" class="h-full flex flex-col items-center justify-center text-gray-300">
+                    <span class="text-xs tracking-widest uppercase">Select file to view source</span>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        const REPO = "cleneshade/cleneshade";
+        const container = document.getElementById('tree-container');
+        const preview = document.getElementById('preview-content');
+        const emptyState = document.getElementById('empty-state');
+        const pathLabel = document.getElementById('current-path');
+        const metaDiv = document.getElementById('file-meta');
+        const statusMsg = document.getElementById('status-msg');
+
+        let repoData = [];
+
+        async function init() {
+            try {
+                const res = await fetch(`https://api.github.com/repos/${REPO}/git/trees/main?recursive=1`);
+                if (!res.ok) throw new Error('API limit or Repo not found');
+                const data = await res.json();
+                repoData = data.tree;
+                renderTree();
+            } catch (err) {
+                container.innerHTML = `<p class="text-red-500 text-[10px] p-4">${err.message.toUpperCase()}</p>`;
+            }
+        }
+
+        function renderTree() {
+            container.innerHTML = '';
+            
+            // Separate files into their directory buckets
+            const structure = { 'ROOT': [] };
+            
+            repoData.forEach(item => {
+                const pathParts = item.path.split('/');
+                if (item.type === 'blob') {
+                    const dir = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : 'ROOT';
+                    if (!structure[dir]) structure[dir] = [];
+                    structure[dir].push(item);
+                }
+            });
+
+            Object.keys(structure).sort().forEach(dir => {
+                // Folder Header
+                const header = document.createElement('div');
+                header.className = 'folder-header flex items-center px-2 py-2 mt-2 text-[10px] font-bold text-gray-400 uppercase tracking-tighter';
+                header.innerHTML = `<span class="chevron mr-2">▼</span> ${dir}`;
+                header.onclick = () => {
+                    header.classList.toggle('collapsed');
+                };
+                container.appendChild(header);
+
+                // File Group
+                const group = document.createElement('div');
+                group.className = 'file-group flex flex-col';
+                
+                structure[dir].forEach(file => {
+                    const item = document.createElement('div');
+                    item.className = 'file-link cursor-pointer px-4 py-1 text-sm text-gray-600 hover:text-black transition-all border-l border-transparent hover:border-gray-300';
+                    item.textContent = file.path.split('/').pop();
+                    item.onclick = (e) => {
+                        e.stopPropagation();
+                        loadFile(file.path, item);
+                    };
+                    group.appendChild(item);
+                });
+                
+                container.appendChild(group);
+            });
+        }
+
+        async function loadFile(path, element) {
+            document.querySelectorAll('.file-link').forEach(el => el.classList.remove('active'));
+            element.classList.add('active');
+            statusMsg.textContent = "FETCHING...";
+
+            try {
+                const res = await fetch(`https://raw.githubusercontent.com/${REPO}/main/${path}`);
+                if (!res.ok) throw new Error();
+                const text = await res.text();
+                
+                emptyState.classList.add('hidden');
+                metaDiv.classList.remove('hidden');
+                preview.textContent = text;
+                pathLabel.textContent = path.toUpperCase();
+                statusMsg.textContent = "SUCCESS";
+            } catch (err) {
+                preview.textContent = "Unable to preview binary or large file.";
+                statusMsg.textContent = "ERROR";
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
